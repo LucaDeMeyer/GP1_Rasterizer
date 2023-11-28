@@ -22,7 +22,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
-	m_pDepthBufferPixels = new float[m_Width * m_Height];
+	m_pDepthBufferPixels = new float[static_cast<float>(m_Width * m_Height)];
 
 	//Initialize Camera
 	m_Camera.Initialize(60.f, { .0f,.0f,-10.f });
@@ -50,10 +50,15 @@ void Renderer::Render() const
 	std::vector<Vertex> vertices_ndc{};
 	const std::vector<Vertex> vertices_world
 	{
+		// Triangle 0
+				{{0.f,2.f,0.f},{1,0,0}},
+				{{1.5f,-1.f,0.f},{1,0,0}},
+				{{-1.5f,-1.f,0.f},{1,0,0}},
 
-		{{0.f,2.f,0.f}},
-		{{1.f,0.f,0.f}},
-		{{-1.f,0.f,0.f}},
+				// Triangle 1
+				{{0.f,4.f,2.f},{1,0,0}},
+				{{3.f,-2.f,2.f},{0,1,0}},
+				{{-3.f,-2.f,2.f},{0,0,1}}
 	};
 
 	std::vector<Vector2> vertices_raster{};
@@ -73,7 +78,13 @@ void Renderer::Render() const
 		const Vector2 edge12 = v2 - v1;
 		const Vector2 edge20 = v0 - v2;
 
-		const float fullTriangleArea{ Vector2::Cross(edge01, edge12) };
+
+		ColorRGB colorV0 = vertices_world[i].color;
+		ColorRGB colorV1 = vertices_world[i + 1].color;
+		ColorRGB colorV2 = vertices_world[i + 2].color;
+
+
+		const float fullTriangleArea{ Vector2::Cross(v1 - v0, v2 - v0) };
 
 		// Calculate bounding box of the triangle
 		int minX = static_cast<int>(std::min({ v0.x, v1.x, v2.x }));
@@ -93,49 +104,51 @@ void Renderer::Render() const
 			{
 
 				ColorRGB finalColor{0,0,0};
-				const int pixelIdx{ px + py * m_Width };
-				const Vector2 curPixel{ static_cast<float>(px), static_cast<float>(py) };
+			
+				const Vector2 pixel{ static_cast<float>(px),static_cast<float>(py)};
 
-				// Calculate the vector between the first vertex and the point
-				const Vector2 directionV0{ curPixel - v0 };
-				const Vector2 directionV1{ curPixel - v1 };
-				const Vector2 directionV2{ curPixel - v2 };
+				// Calculate the vector between vertex and the point
+				const Vector2 directionV0{ pixel - v0 };
+				const Vector2 directionV1{ pixel - v1 };
+				const Vector2 directionV2{ pixel - v2 };
 
-				if(!(Vector2::Cross(edge01, directionV0) > 0) && (Vector2::Cross(edge12, directionV1) > 0) && (Vector2::Cross(edge20, directionV2) > 0))
-					continue;
-
-
-				// Calculate the barycentric weights
-				const float weightV0{ Vector2::Cross(edge01, directionV0) / fullTriangleArea };
-				const float weightV1{ Vector2::Cross(edge12, directionV1) / fullTriangleArea };
-				const float weightV2{ Vector2::Cross(edge20, directionV2) / fullTriangleArea };
-
-
-				//Calculate the depth
-				const float depthV0{ (vertices_ndc[i].position.z) };
-				const float depthV1{ (vertices_ndc[i + 1].position.z) };
-				const float depthV2{ (vertices_ndc[i + 2].position.z) };
+			
 				
 
 
+				// Calculate the barycentric weights
+				 float weightV0{ Vector2::Cross(edge12 , directionV1) };
+				 float weightV1{ Vector2::Cross(edge20,directionV2) };
+				 float weightV2{ Vector2::Cross(edge01,directionV0) };
 
-				// Calculate the depth at this pixel
-				const float interpolatedDepth
+				//hit-test
+				if(weightV0 < 0)
+					continue;
+				if(weightV1< 0)
+					continue;
+				if(weightV2 < 0)
+					continue;
+				 
+				weightV0 /= fullTriangleArea;
+				weightV1 /= fullTriangleArea;
+				weightV2 /= fullTriangleArea;
+
+
+				const float depthWeight =
 				{
-					1.0f /
-						(weightV0 * 1.0f / depthV0 +
-						weightV1 * 1.0f / depthV1 +
-						weightV2 * 1.0f / depthV2)
+					weightV0 * vertices_world[i].position.z +
+					weightV1 * vertices_world[i + 1].position.z +
+					weightV2 * vertices_world[i + 2].position.z
 				};
 
-				// If this pixel hit is further away then a previous pixel hit, continue to the next pixel
-				if (m_pDepthBufferPixels[pixelIdx] < interpolatedDepth) continue;
+				if (depthWeight > m_pDepthBufferPixels[px * m_Height + py])
+					continue;
 
-				// Save the new depth
-				m_pDepthBufferPixels[pixelIdx] = interpolatedDepth;
+				m_pDepthBufferPixels[px * m_Height + py] = depthWeight;
 
-				//Update Color in Buffer
-				finalColor = vertices_world[i].color;
+
+
+				finalColor = colorV0 * weightV0 + colorV1 * weightV1 + colorV2 * weightV2;
 				//Update Color in Buffer
 				finalColor.MaxToOne();
 
@@ -170,8 +183,6 @@ void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_
 		//Perspective Divide
 		vertices_out[i].position.x /= vertices_out[i].position.z;
 		vertices_out[i].position.y /= vertices_out[i].position.z;
-
-
 	}
 }
 
