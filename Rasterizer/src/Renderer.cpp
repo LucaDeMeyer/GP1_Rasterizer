@@ -48,7 +48,8 @@ void Renderer::Render() const
 	ResetDepthBuffer();
 
 
-	RenderTriangle();
+	//RenderTriangle();
+
 	RenderMesh();
 
 	
@@ -96,23 +97,31 @@ void Renderer::VertexTransformationToScreenSpace(const std::vector<Vertex>& vert
 
 void Renderer::VertexTransformationFunction(const std::vector<Mesh>& meshes_in, std::vector<Mesh>& meshes_out) const
 {
+	meshes_out.clear();
 	meshes_out.reserve(meshes_in.size());
 
-	for (const Mesh& mesh : meshes_in)
+	for (size_t i = 0; i < meshes_in.size(); ++i)
 	{
-		meshes_out[0].vertices.clear();
-		meshes_out[0].vertices.reserve(mesh.vertices.size());
-
-		for (Vertex vertex : mesh.vertices)
+	
+		for (const auto& vertex : meshes_in[i].vertices)
 		{
-			// to view space
-			vertex.position = m_Camera.viewMatrix.TransformPoint({ vertex.position,1.0f });
-			
-			// to projection space
-			vertex.position.x /= vertex.position.z;
-			vertex.position.y /=  vertex.position.z;
+			Vertex transformedVertex;
 
-			meshes_out[0].vertices.emplace_back(vertex);
+			// Transform to view space
+			transformedVertex.position = m_Camera.viewMatrix.TransformPoint({ vertex.position, 1.0f });
+			transformedVertex.color = vertex.color;
+
+			// Perspective divide
+			transformedVertex.position.x /= vertex.position.z;
+			transformedVertex.position.y /= vertex.position.z;
+
+
+			//transform to screen space
+			transformedVertex.position.x = static_cast<float>(m_Width) * (transformedVertex.position.x + 1) / 2.f;
+			transformedVertex.position.y = static_cast<float>(m_Height) * (1.f - transformedVertex.position.y) / 2.f;
+
+			// Add the transformed vertex to the current output mesh
+			meshes_out[i].vertices.emplace_back(transformedVertex);
 		}
 	}
 }
@@ -177,6 +186,8 @@ void Renderer::RenderTriangle() const
 		ColorRGB colorV2 = vertices_world[i + 2].color;
 
 
+	
+
 		const float fullTriangleArea{ Vector2::Cross(v1 - v0, v2 - v0) };
 
 		// Calculate bounding box of the triangle
@@ -204,10 +215,6 @@ void Renderer::RenderTriangle() const
 				const Vector2 directionV0{ pixel - v0 };
 				const Vector2 directionV1{ pixel - v1 };
 				const Vector2 directionV2{ pixel - v2 };
-
-
-
-
 
 				// Calculate the barycentric weights
 				float weightV0{ Vector2::Cross(edge12 , directionV1) };
@@ -259,7 +266,7 @@ void Renderer::RenderTriangle() const
 void Renderer::RenderMesh() const
 {
 	//define mesh
-	std::vector<Mesh> meshes_world
+	const std::vector<Mesh> meshes_world
 	{
 		Mesh{
 			{
@@ -274,14 +281,13 @@ void Renderer::RenderMesh() const
 			Vertex{{0,-3,-2}},
 			Vertex{{3,-3,-2}}
 
-
 			},
 	{
 				3,0,4,1,5,2,
-				2,6,
+				2,6, // dummy triangle
 				6,3,7,4,8,5
 				},
-		PrimitiveTopology::TriangleList
+		PrimitiveTopology::TriangleStrip
 		}
 
 	};
@@ -292,17 +298,31 @@ void Renderer::RenderMesh() const
 
 	ColorRGB finalColor{};
 
-	for (size_t i{}; i < meshes_raster[0].indices.size(); i += 3)
+	//loop over indices
+	for (size_t i{}; i < meshes_raster[0].indices.size(); i+=3)
 	{
 		const Mesh mesh = meshes_raster[0];
 
-		const Vector2 v0 = { mesh.vertices[mesh.indices[i]].position.x, mesh.vertices[mesh.indices[i]].position.y };
-		const Vector2 v1 = { mesh.vertices[mesh.indices[i + 1]].position.x, mesh.vertices[mesh.indices[i + 1]].position.y };
-		const Vector2 v2 = { mesh.vertices[mesh.indices[i + 2]].position.x, mesh.vertices[mesh.indices[i + 2]].position.y };
+
+		 Vector2 v0 = { mesh.vertices[mesh.indices[i]].position.x, mesh.vertices[mesh.indices[i]].position.y };
+		 Vector2 v1 = { mesh.vertices[mesh.indices[i + 1]].position.x, mesh.vertices[mesh.indices[i + 1]].position.y };
+		 Vector2 v2 = { mesh.vertices[mesh.indices[i + 2]].position.x, mesh.vertices[mesh.indices[i + 2]].position.y };
+
+		
 
 		ColorRGB colorV0 = mesh.vertices[mesh.indices[i]].color;
 		ColorRGB colorV1 = mesh.vertices[mesh.indices[i + 1]].color;
 		ColorRGB colorV2 = mesh.vertices[mesh.indices[i + 2]].color;
+
+		//flip triangle if index is odd
+		if (i % 2 == 1)
+		{
+			v1 = { mesh.vertices[mesh.indices[i + 2]].position.x, mesh.vertices[mesh.indices[i + 2]].position.y };
+			v2 = { mesh.vertices[mesh.indices[i + 1]].position.x, mesh.vertices[mesh.indices[i + 1]].position.y };
+
+			colorV1 = mesh.vertices[mesh.indices[i + 2]].color;
+			colorV2 = mesh.vertices[mesh.indices[i + 1]].color;
+		}
 
 		const Vector2 edge01 = v1 - v0;
 		const Vector2 edge12 = v2 - v1;
@@ -310,23 +330,12 @@ void Renderer::RenderMesh() const
 
 		const float areaTriangle = Vector2::Cross(v1 - v0, v2 - v0);
 
-		//bounding Box
-		int minX = static_cast<int>(std::min({ v0.x, v1.x, v2.x }));
-		int minY = static_cast<int>(std::min({ v0.y, v1.y, v2.y }));
-		int maxX = static_cast<int>(std::max({ v0.x, v1.x, v2.x }));
-		int maxY = static_cast<int>(std::max({ v0.y, v1.y, v2.y }));
 
-		// Clamp bounding box within screen bounds
-		minX = std::max(minX, 0);
-		minY = std::max(minY, 0);
-		maxX = std::min(maxX, m_Width - 1);
-		maxY = std::min(maxY, m_Height - 1);
-
-		for (int px {minX}; px < maxX; ++px)
+		for (int px {}; px < m_Width; ++px)
 		{
-			for (int py {minY}; py < maxY; ++py)
+			for (int py {}; py < m_Height; ++py)
 			{
-				finalColor = colors::Black;
+		
 
 				Vector2 pixel = { static_cast<float>(px),static_cast<float>(py) };
 
@@ -334,15 +343,16 @@ void Renderer::RenderMesh() const
 				const Vector2 directionV1 = pixel - v1;
 				const Vector2 directionV2 = pixel - v2;
 
+				//calc weights
+				float weightV0 = Vector2::Cross(edge12, directionV1);
+				float weightV1 = Vector2::Cross(edge20, directionV2);
 				float weightV2 = Vector2::Cross(edge01, directionV0);
+
+
 				if (weightV2 < 0)
 					continue;
-
-				float weightV0 = Vector2::Cross(edge12, directionV1);
 				if (weightV0 < 0)
 					continue;
-
-				float weightV1 = Vector2::Cross(edge20, directionV2);
 				if (weightV1 < 0)
 					continue;
 
@@ -350,9 +360,6 @@ void Renderer::RenderMesh() const
 				weightV1 /= areaTriangle;
 				weightV2 /= areaTriangle;
 
-				if (weightV0 + weightV1 + weightV2 < 1 - FLT_EPSILON
-					&& weightV0 + weightV1 + weightV2 > 1 + FLT_EPSILON)
-					continue;
 
 				const float depthWeight =
 				{
@@ -360,6 +367,8 @@ void Renderer::RenderMesh() const
 					weightV1 * mesh.vertices[mesh.indices[i + 1]].position.z +
 					weightV2 * mesh.vertices[mesh.indices[i + 2]].position.z
 				};
+
+			
 
 				if (depthWeight > m_pDepthBufferPixels[px + (py * m_Width)])
 					continue;
