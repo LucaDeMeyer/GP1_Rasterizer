@@ -10,6 +10,7 @@ struct SDL_Surface;
 
 namespace dae
 {
+	struct Vertex_Out;
 	class Texture;
 	struct Mesh;
 	struct Vertex;
@@ -36,6 +37,13 @@ namespace dae
 		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const;
 
 		void VertexTransformationToScreenSpace(const std::vector<Vertex>& vertices_in, std::vector<Vector2>& vertex_out) const;
+
+		void VertexTransformationFunction(const std::vector<Mesh>& meshes_in, std::vector<Mesh>& meshes_out) const;
+
+		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex_Out>& vertices_out, const Matrix& worldViewProjectionMatrix, const Matrix& meshWorldMatrix);
+
+		void RenderTriangle() const;
+		void RenderMesh() const;
 
 		void ClearBackground() const;
 		void ResetDepthBuffer() const;
