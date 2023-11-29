@@ -38,13 +38,15 @@ namespace dae
 
 		void VertexTransformationToScreenSpace(const std::vector<Vertex>& vertices_in, std::vector<Vector2>& vertex_out) const;
 
-		void VertexTransformationFunction(const std::vector<Mesh>& meshes_in, std::vector<Mesh>& meshes_out) const;
+		void VertexTransformationFunction(Mesh& mesh) const;
+		
 
 		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex_Out>& vertices_out, const Matrix& worldViewProjectionMatrix, const Matrix& meshWorldMatrix);
 
 		void RenderTriangle() const;
 		void RenderMesh() const;
-
+		void RenderTriangle(const Mesh& mesh, const std::vector<Vector2>& verteciesRaster,
+			int vertexIndex, bool swapVertex) const;
 		void ClearBackground() const;
 		void ResetDepthBuffer() const;
 	private:
