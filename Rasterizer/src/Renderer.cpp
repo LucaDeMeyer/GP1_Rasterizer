@@ -23,7 +23,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	
-		m_pDepthBufferPixels = new float(FLT_MAX);
+	m_pDepthBufferPixels = new float[static_cast<float>(m_Width * m_Height)];
 
 
 	//Initialize Camera
@@ -47,57 +47,256 @@ void Renderer::Render() const
 {
 
 	ClearBackground();
+	ResetDepthBuffer();
+
+	//define mesh
+	const std::vector<Mesh> meshes_world =
+	{
+
+		Mesh{
+			{
+				Vertex{{-3.f, 3.f, -2.f}, {0.0f, 0.0f}},
+				Vertex{{0.f, 3.f, -2.f}, {0.5f, 0.0f}},
+				Vertex{{3.f, 3.f, -2.f}, {1.0f, 0.0f}},
+				Vertex{{-3.f, 0.f, -2.f}, {0.0f, 0.5f}},
+				Vertex{{0.f, 0.f, -2.f}, {0.5f, 0.5f}},
+				Vertex{{3.f, 0.f, -2.f}, {1.0f, 0.5f}},
+				Vertex{{-3.f, -3.f, -2.f}, {0.0f, 1.0f}},
+				Vertex{{0.f, -3.f, -2.f}, {0.5f, 1.0f}},
+				Vertex{{3.f, -3.f, -2.f}, {1.0f, 1.0f}},
+			},
+
+			{
+				3, 0, 4, 1, 5, 2,
+				2, 6,
+				6, 3, 7, 4, 8, 5
+			},
+
+			PrimitiveTopology::TriangleStrip
+		}
+	};
+
+	// for each mesh
+
+	for(const auto& mesh : meshes_world)
+	{
+		std::vector<Vertex> vertices_ndc{};
+		std::vector<Vector2>vertices_screen{};
+
+		//transform from world to NDC
+		VertexTransformationFunction(mesh.vertices, vertices_ndc);
+		VertexTransformationToScreenSpace(vertices_ndc, vertices_screen);
+
+		//if triangle list -> go over indices by 3 to get full triangle
+		if(mesh.primitiveTopology == PrimitiveTopology::TriangleList)
+		{
+			for(size_t vertexIndex{}; vertexIndex < mesh.indices.size(); vertexIndex+=3)
+			{
+				uint32_t vertexIndex0 = { mesh.indices[vertexIndex] };
+				uint32_t vertexIndex1 = { mesh.indices[vertexIndex + 1] };
+				uint32_t vertexIndex2 = { mesh.indices[vertexIndex + 2] };
+
+				//get vertices
+				const Vector2 v0{ vertices_screen[vertexIndex0] };
+				const Vector2 v1{ vertices_screen[vertexIndex1] };
+				const Vector2 v2{ vertices_screen[vertexIndex2] };
+
+				//calc edges
+
+				const Vector2 edge01 = v1 - v0;
+				const Vector2 edge12 = v2 - v1;
+				const Vector2 edge20 = v0 - v2;
+
+				//calc triangle area
+				const float fullTriangleArea{ Vector2::Cross(v1 - v0, v2 - v0) };
+
+				// Calculate bounding box of the triangle
+				int minX = static_cast<int>(std::min({ v0.x, v1.x, v2.x }));
+				int minY = static_cast<int>(std::min({ v0.y, v1.y, v2.y }));
+				int maxX = static_cast<int>(std::max({ v0.x, v1.x, v2.x }));
+				int maxY = static_cast<int>(std::max({ v0.y, v1.y, v2.y }));
+
+				// Clamp bounding box within screen bounds
+				minX = std::max(minX, 0);
+				minY = std::max(minY, 0);
+				maxX = std::min(maxX, m_Width - 1);
+				maxY = std::min(maxY, m_Height - 1);
+
+				for (int px{ minX }; px < maxX; ++px)
+				{
+					for (int py{ minY }; py < maxY; ++py)
+					{
+
+						ColorRGB finalColor{ 0,0,0 };
+						const int pixelIdx{ px + py * m_Width };
+						const Vector2 pixel{ static_cast<float>(px),static_cast<float>(py) };
+
+						// Calculate the vector between vertex and the point
+						const Vector2 directionV0{ pixel - v0 };
+						const Vector2 directionV1{ pixel - v1 };
+						const Vector2 directionV2{ pixel - v2 };
+
+						// Calculate the barycentric weights
+						float weightV0{ Vector2::Cross(edge12 , directionV1) };
+						float weightV1{ Vector2::Cross(edge20,directionV2) };
+						float weightV2{ Vector2::Cross(edge01,directionV0) };
+
+						//hit-test
+						if (weightV0 < 0)
+							continue;
+						if (weightV1 < 0)
+							continue;
+						if (weightV2 < 0)
+							continue;
+
+						weightV0 /= fullTriangleArea;
+						weightV1 /= fullTriangleArea;
+						weightV2 /= fullTriangleArea;
 
 
-	//std::vector<Mesh> meshes_world
-	//{
-	//	Mesh{
-	//		{
 
-	//		Vertex{{-3,3,-2}},
-	//		Vertex{{0,3,-2}},
-	//		Vertex{{3,3,-2}},
-	//		Vertex{{-3,0,-2}},
-	//		Vertex{{0,0,-2}},
-	//		Vertex{{3,0,-2}},
-	//		Vertex{{-3,-3,-2}},
-	//		Vertex{{0,-3,-2}},
-	//		Vertex{{3,-3,-2}}
+						//Calculate the depth
+						const float depthV0{ (vertices_ndc[vertexIndex0].position.z) };
+						const float depthV1{ (vertices_ndc[vertexIndex1].position.z) };
+						const float depthV2{ (vertices_ndc[vertexIndex2].position.z) };
 
-	//		},
-	//{
-	//			3,0,4,1,5,2,
-	//			2,6, // dummy triangle
-	//			6,3,7,4,8,5
-	//			},
-	//	PrimitiveTopology::TriangleStrip
-	//	}
+						// Calculate the depth at this pixel
+						const float interpolatedDepth
+						{
+							1.0f /
+							(weightV0 * 1.0f / depthV0 +
+								weightV1 * 1.0f / depthV1 +
+								weightV2 * 1.0f / depthV2)
+						};
+						// If this pixel hit is further away then a previous pixel hit, continue to the next pixel
+						if (m_pDepthBufferPixels[pixelIdx] < interpolatedDepth) continue;
 
-	//};
-	//for (Mesh& mesh : meshes_world)
-	//{
-	//	VertexTransformationFunction(mesh);
+						// Save the new depth
+						m_pDepthBufferPixels[pixelIdx] = interpolatedDepth;
 
-	//	std::vector<Vector2> verteciesRaster;
-	//	for (const Vertex_Out& ndcVertex : mesh.vertices_out)
-	//		verteciesRaster.push_back({ (ndcVertex.position.x + 1) / 2.0f * m_Width,
-	//			(1.0f - ndcVertex.position.y) / 2.0f * m_Height });
+						//Update Color in Buffer
+						finalColor.MaxToOne();
 
-	//	
-	//	assert(mesh.vertices_out.size() % 3 == 0);
-	//	//Check if the number of vertecies is divisible by 3.
-	//	//If not then there is an issue with our triangles
+						m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+							static_cast<uint8_t>(finalColor.r * 255),
+							static_cast<uint8_t>(finalColor.g * 255),
+							static_cast<uint8_t>(finalColor.b * 255));
+					}
+				}
+			}
 
-	//	if (mesh.primitiveTopology == PrimitiveTopology::TriangleList)
-	//		for (int vertexIndex{ 0 }; vertexIndex < mesh.indices.size(); vertexIndex += 3)
-	//			RenderTriangle(mesh, verteciesRaster, vertexIndex, false);
-	//	if (mesh.primitiveTopology == PrimitiveTopology::TriangleStrip)
-	//		for (int startVertexIndex{ 0 }; startVertexIndex < mesh.indices.size() - 2; ++startVertexIndex)
-	//			RenderTriangle(mesh, verteciesRaster, startVertexIndex, startVertexIndex % 2);
-	//}
-	//RenderTriangle();
-	RenderMesh();
 
+		}
+
+
+		//if triangle strip -> loop over indices by 1
+		if(mesh.primitiveTopology == PrimitiveTopology::TriangleStrip)
+		{
+			for(int vertexIndex{}; vertexIndex < mesh.indices.size()- 2; ++vertexIndex)
+			{
+				// bool top swap vertices -> uneven index -> flip triangle
+				bool swapVertices = vertexIndex % 2;
+
+				
+				uint32_t vertexIndex0 = { mesh.indices[vertexIndex] };
+				uint32_t vertexIndex1 = {mesh.indices[vertexIndex + 1 * !swapVertices + 2 * swapVertices]};
+				uint32_t vertexIndex2 = {mesh.indices[vertexIndex + 2 * !swapVertices + 1 * swapVertices]};
+
+				// same logic as render triangle
+
+				//get vertices
+				const Vector2 v0{ vertices_screen[vertexIndex0] };
+				const Vector2 v1{ vertices_screen[vertexIndex1] };
+				const Vector2 v2{ vertices_screen[vertexIndex2] };
+
+				//calc edges
+
+				const Vector2 edge01 = v1 - v0;
+				const Vector2 edge12 = v2 - v1;
+				const Vector2 edge20 = v0 - v2;
+
+				//calc triangle area
+				const float fullTriangleArea{ Vector2::Cross(v1 - v0, v2 - v0) };
+
+				// Calculate bounding box of the triangle
+				int minX = static_cast<int>(std::min({ v0.x, v1.x, v2.x }));
+				int minY = static_cast<int>(std::min({ v0.y, v1.y, v2.y }));
+				int maxX = static_cast<int>(std::max({ v0.x, v1.x, v2.x }));
+				int maxY = static_cast<int>(std::max({ v0.y, v1.y, v2.y }));
+
+				// Clamp bounding box within screen bounds
+				minX = std::max(minX, 0);
+				minY = std::max(minY, 0);
+				maxX = std::min(maxX, m_Width - 1);
+				maxY = std::min(maxY, m_Height - 1);
+
+				for (int px{ minX }; px < maxX; ++px)
+				{
+					for (int py{ minY }; py < maxY; ++py)
+					{
+
+						ColorRGB finalColor{ 0,0,0 };
+						const int pixelIdx{ px + py * m_Width };
+						const Vector2 pixel{ static_cast<float>(px),static_cast<float>(py) };
+
+						// Calculate the vector between vertex and the point
+						const Vector2 directionV0{ pixel - v0 };
+						const Vector2 directionV1{ pixel - v1 };
+						const Vector2 directionV2{ pixel - v2 };
+
+						// Calculate the barycentric weights
+						float weightV0{ Vector2::Cross(edge12 , directionV1) };
+						float weightV1{ Vector2::Cross(edge20,directionV2) };
+						float weightV2{ Vector2::Cross(edge01,directionV0) };
+
+						//hit-test
+						if (weightV0 < 0)
+							continue;
+						if (weightV1 < 0)
+							continue;
+						if (weightV2 < 0)
+							continue;
+
+						weightV0 /= fullTriangleArea;
+						weightV1 /= fullTriangleArea;
+						weightV2 /= fullTriangleArea;
+
+
+
+						//Calculate the depth
+						const float depthV0{ (vertices_ndc[vertexIndex0].position.z) };
+						const float depthV1{ (vertices_ndc[vertexIndex1].position.z) };
+						const float depthV2{ (vertices_ndc[vertexIndex2].position.z) };
+
+						// Calculate the depth at this pixel
+						const float interpolatedDepth
+						{
+							1.0f /
+							(weightV0 * 1.0f / depthV0 +
+								weightV1 * 1.0f / depthV1 +
+								weightV2 * 1.0f / depthV2)
+						};
+						// If this pixel hit is further away then a previous pixel hit, continue to the next pixel
+						if (m_pDepthBufferPixels[pixelIdx] < interpolatedDepth) continue;
+
+						// Save the new depth
+						m_pDepthBufferPixels[pixelIdx] = interpolatedDepth;
+
+						//Update Color in Buffer
+						finalColor = { 1,1,1 };
+						finalColor.MaxToOne();
+
+						m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+							static_cast<uint8_t>(finalColor.r * 255),
+							static_cast<uint8_t>(finalColor.g * 255),
+							static_cast<uint8_t>(finalColor.b * 255));
+					}
+				}
+			}
+
+
+			}
+		}
 	
 	//@END
 	//Update SDL Surface
@@ -139,46 +338,6 @@ void Renderer::VertexTransformationToScreenSpace(const std::vector<Vertex>& vert
 	}
 }
 
-void Renderer::VertexTransformationFunction(Mesh& mesh) const
-{
-	//const Matrix worldViewMatrix = mesh.worldMatrix * m_Camera.viewMatrix * m_Camera.projectionMatrix;
-
-	for (const Vertex& vertex : mesh.vertices)
-	{
-		Vertex_Out vertexOut{ Vector4{}, vertex.color, vertex.uv };
-
-		vertexOut.position = m_Camera.viewMatrix.TransformPoint({ vertexOut.position,1.0f });
-
-		vertexOut.position.x /= vertexOut.position.w;
-		vertexOut.position.y /= vertexOut.position.w;
-		vertexOut.position.z /= vertexOut.position.w;
-
-		mesh.vertices_out.push_back(vertexOut);
-	}
-		
-		
-	
-}
-//void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex_Out>& vertices_out, const Matrix& worldViewProjectionMatrix, const Matrix& meshWorldMatrix)
-//{
-//	vertices_out.resize(vertices_in.size());
-//
-//	for (size_t i{}; i < vertices_in.size(); ++i)
-//	{
-//		// Transform with VIEW matrix (inverse ONB)
-//		vertices_out[i].position = worldViewProjectionMatrix.TransformPoint({ vertices_in[i].position, 1.0f });
-//		vertices_out[i].normal = meshWorldMatrix.TransformVector(vertices_in[i].normal);
-//		vertices_out[i].tangent = meshWorldMatrix.TransformVector(vertices_in[i].tangent);
-//
-//		vertices_out[i].uv = vertices_in[i].uv;
-//
-//		// Apply Perspective Divide
-//		vertices_out[i].position.x /= vertices_out[i].position.w;
-//		vertices_out[i].position.y /= vertices_out[i].position.w;
-//		vertices_out[i].position.z /= vertices_out[i].position.w;
-//		//vertices_out[i].uv /= vertices_out[i].position.w;	
-//	}
-//}
 
 
 void Renderer::RenderTriangle() const
@@ -297,140 +456,6 @@ void Renderer::RenderTriangle() const
 
 }
 
-void Renderer::RenderMesh() const
-{
-	//define mesh
-	 std::vector<Mesh> meshes_world
-	{
-		Mesh{
-			{
-
-			Vertex{{-3,3,-2}},
-			Vertex{{0,3,-2}},
-			Vertex{{3,3,-2}},
-			Vertex{{-3,0,-2}},
-			Vertex{{0,0,-2}},
-			Vertex{{3,0,-2}},
-			Vertex{{-3,-3,-2}},
-			Vertex{{0,-3,-2}},
-			Vertex{{3,-3,-2}}
-
-			},
-	{
-				3,0,4,1,5,2,
-				2,6, // dummy triangle
-				6,3,7,4,8,5
-				},
-		PrimitiveTopology::TriangleStrip
-		}
-
-	};
-
-	std::vector<Mesh> meshes_raster{};
-
-	for ( auto& mesh : meshes_world)
-	{
-		VertexTransformationFunction(mesh);
-	}
-	ColorRGB finalColor{};
-
-	for (size_t i{}; i < meshes_raster[0].indices.size(); i += 3)
-	{
-		const Mesh mesh = meshes_raster[0];
-
-		 Vector2 v0 = { mesh.vertices[mesh.indices[i]].position.x, mesh.vertices[mesh.indices[i]].position.y };
-		 Vector2 v1 = { mesh.vertices[mesh.indices[i + 1]].position.x, mesh.vertices[mesh.indices[i + 1]].position.y };
-		 Vector2 v2 = { mesh.vertices[mesh.indices[i + 2]].position.x, mesh.vertices[mesh.indices[i + 2]].position.y };
-
-		ColorRGB colorV0 = mesh.vertices[mesh.indices[i]].color;
-		ColorRGB colorV1 = mesh.vertices[mesh.indices[i + 1]].color;
-		ColorRGB colorV2 = mesh.vertices[mesh.indices[i + 2]].color;
-
-		//flip triangle
-		if (i % 2 == 1)
-		{
-			v1 = { mesh.vertices[mesh.indices[i + 2]].position.x, mesh.vertices[mesh.indices[i + 2]].position.y };
-			v2 = { mesh.vertices[mesh.indices[i + 1]].position.x, mesh.vertices[mesh.indices[i + 1]].position.y };
-
-			colorV1 = mesh.vertices[mesh.indices[i + 2]].color;
-			colorV2 = mesh.vertices[mesh.indices[i + 1]].color;
-		}
-
-		const Vector2 edge01 = v1 - v0;
-		const Vector2 edge12 = v2 - v1;
-		const Vector2 edge20 = v0 - v2;
-
-		const float areaTriangle = Vector2::Cross(v1 - v0, v2 - v0);
-
-		//bounding Box
-		int minX = static_cast<int>(std::min({ v0.x, v1.x, v2.x }));
-		int minY = static_cast<int>(std::min({ v0.y, v1.y, v2.y }));
-		int maxX = static_cast<int>(std::max({ v0.x, v1.x, v2.x }));
-		int maxY = static_cast<int>(std::max({ v0.y, v1.y, v2.y }));
-
-		// Clamp bounding box within screen bounds
-		minX = std::max(minX, 0);
-		minY = std::max(minY, 0);
-		maxX = std::min(maxX, m_Width - 1);
-		maxY = std::min(maxY, m_Height - 1);
-
-		for (int px {minX}; px < maxX; ++px)
-		{
-			for (int py {minY}; py < maxY; ++py)
-			{
-		
-
-				Vector2 pixel = { static_cast<float>(px),static_cast<float>(py) };
-
-				const Vector2 directionV0 = pixel - v0;
-				const Vector2 directionV1 = pixel - v1;
-				const Vector2 directionV2 = pixel - v2;
-
-				//calc weights
-				float weightV0 = Vector2::Cross(edge12, directionV1);
-				float weightV1 = Vector2::Cross(edge20, directionV2);
-				float weightV2 = Vector2::Cross(edge01, directionV0);
-
-
-				if (weightV2 < 0)
-					continue;
-				if (weightV0 < 0)
-					continue;
-				if (weightV1 < 0)
-					continue;
-
-				weightV0 /= areaTriangle;
-				weightV1 /= areaTriangle;
-				weightV2 /= areaTriangle;
-
-
-				const float depthWeight =
-				{
-					weightV0 * mesh.vertices[mesh.indices[i]].position.z +
-					weightV1 * mesh.vertices[mesh.indices[i + 1]].position.z +
-					weightV2 * mesh.vertices[mesh.indices[i + 2]].position.z
-				};
-
-			
-
-				if (depthWeight > m_pDepthBufferPixels[px + (py * m_Width)])
-					continue;
-
-				m_pDepthBufferPixels[px + (py * m_Width)] = depthWeight;
-
-				finalColor = colorV0 * weightV0 + colorV1 * weightV1 + colorV2 * weightV2;
-
-				//Update Color in Buffer
-				finalColor.MaxToOne();
-
-				m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
-					static_cast<uint8_t>(finalColor.r * 255),
-					static_cast<uint8_t>(finalColor.g * 255),
-					static_cast<uint8_t>(finalColor.b * 255));
-			}
-		}
-	}
-}
 
 
 void Renderer::RenderTriangle(const Mesh& mesh, const std::vector<Vector2>& verteciesRaster,
