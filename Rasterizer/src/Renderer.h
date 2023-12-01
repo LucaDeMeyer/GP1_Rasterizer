@@ -59,5 +59,7 @@ namespace dae
 		int m_Height{};
 		float m_Ar{};
 		int m_FOV{ 90 };
+
+		Texture* m_pTexture{};
 	};
 }

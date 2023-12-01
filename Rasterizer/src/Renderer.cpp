@@ -25,6 +25,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	
 	m_pDepthBufferPixels = new float[static_cast<float>(m_Width * m_Height)];
 
+	m_pTexture = Texture::LoadFromFile("Resources/uv_grid_2.png");
 
 	//Initialize Camera
 	m_Camera.Initialize(60.f, { .0f,.0f,-10.f });
@@ -36,6 +37,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 Renderer::~Renderer()
 {
 	delete[] m_pDepthBufferPixels;
+	delete m_pTexture;
 }
 
 void Renderer::Update(Timer* pTimer)
@@ -55,15 +57,15 @@ void Renderer::Render() const
 
 		Mesh{
 			{
-				Vertex{{-3.f, 3.f, -2.f}, {0.0f, 0.0f}},
-				Vertex{{0.f, 3.f, -2.f}, {0.5f, 0.0f}},
-				Vertex{{3.f, 3.f, -2.f}, {1.0f, 0.0f}},
-				Vertex{{-3.f, 0.f, -2.f}, {0.0f, 0.5f}},
-				Vertex{{0.f, 0.f, -2.f}, {0.5f, 0.5f}},
-				Vertex{{3.f, 0.f, -2.f}, {1.0f, 0.5f}},
-				Vertex{{-3.f, -3.f, -2.f}, {0.0f, 1.0f}},
-				Vertex{{0.f, -3.f, -2.f}, {0.5f, 1.0f}},
-				Vertex{{3.f, -3.f, -2.f}, {1.0f, 1.0f}},
+				Vertex{{-3.f, 3.f, -2.f}, {0.0f, 0.0f},{0,0}},
+				Vertex{{0.f, 3.f, -2.f}, {0.5f, 0.0f},{.5,0}},
+				Vertex{{3.f, 3.f, -2.f}, {1.0f, 0.0f},{1,0}},
+				Vertex{{-3.f, 0.f, -2.f}, {0.0f, 0.5f},{0,.5}},
+				Vertex{{0.f, 0.f, -2.f}, {0.5f, 0.5f},{.5,.5}},
+				Vertex{{3.f, 0.f, -2.f}, {1.0f, 0.5f},{1,.5}},
+				Vertex{{-3.f, -3.f, -2.f}, {0.0f, 1.0f},{0,1}},
+				Vertex{{0.f, -3.f, -2.f}, {0.5f, 1.0f},{.5,1}},
+				Vertex{{3.f, -3.f, -2.f}, {1.0f, 1.0f},{1,1}},
 			},
 
 			{
@@ -276,14 +278,24 @@ void Renderer::Render() const
 								weightV1 * 1.0f / depthV1 +
 								weightV2 * 1.0f / depthV2)
 						};
+
 						// If this pixel hit is further away then a previous pixel hit, continue to the next pixel
 						if (m_pDepthBufferPixels[pixelIdx] < interpolatedDepth) continue;
 
 						// Save the new depth
 						m_pDepthBufferPixels[pixelIdx] = interpolatedDepth;
 
+						const Vector2 interpolatedUv
+						{
+							((vertices_ndc[vertexIndex0].uv / depthV0) * weightV0 +
+							(vertices_ndc[vertexIndex1].uv / depthV1) * weightV1 + 
+							(vertices_ndc[vertexIndex2].uv / depthV2) * weightV2) * interpolatedDepth
+
+						};
+
+
 						//Update Color in Buffer
-						finalColor = { 1,1,1 };
+						finalColor = m_pTexture->Sample(interpolatedUv);
 						finalColor.MaxToOne();
 
 						m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
