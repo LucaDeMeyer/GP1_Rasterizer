@@ -50,8 +50,6 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_Ar = static_cast<float>(m_Width) / static_cast<float>(m_Height);
 	m_Camera.Initialize( m_Ar,45.f, { 0.f, 5.f, -64.f });
 
-
-	//m_Camera.CalculateProjectionMatrix(m_Ar);
 	const Vector3 position{ 0, 0, 50 };
 	//const Vector3 position{ 12.4f, -0.7f, 7.5f };
 	constexpr float YRotation{ -PI_DIV_2 };
@@ -84,33 +82,6 @@ void Renderer::Render() const
 
 	ClearBackground();
 	ResetDepthBuffer();
-
-	//define mesh
-	/*std::vector<Mesh> meshes_world =
-	{
-
-		Mesh{
-			{
-				Vertex{{-3.f, 3.f, -2.f}, {0.0f, 0.0f},{0,0}},
-				Vertex{{0.f, 3.f, -2.f}, {0.5f, 0.0f},{.5,0}},
-				Vertex{{3.f, 3.f, -2.f}, {1.0f, 0.0f},{1,0}},
-				Vertex{{-3.f, 0.f, -2.f}, {0.0f, 0.5f},{0,.5}},
-				Vertex{{0.f, 0.f, -2.f}, {0.5f, 0.5f},{.5,.5}},
-				Vertex{{3.f, 0.f, -2.f}, {1.0f, 0.5f},{1,.5}},
-				Vertex{{-3.f, -3.f, -2.f}, {0.0f, 1.0f},{0,1}},
-				Vertex{{0.f, -3.f, -2.f}, {0.5f, 1.0f},{.5,1}},
-				Vertex{{3.f, -3.f, -2.f}, {1.0f, 1.0f},{1,1}},
-			},
-
-			{
-				3, 0, 4, 1, 5, 2,
-				2, 6,
-				6, 3, 7, 4, 8, 5
-			},
-
-			PrimitiveTopology::TriangleStrip
-		}
-	};*/
 
 	// for each mesh
 	for (const auto& mesh : m_MeshesWorld)
@@ -477,24 +448,24 @@ void Renderer::RenderTriangleStrip(std::vector<Mesh>& meshes_world, std::vector<
 }
 
 
-//void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const
-//{
-//	//Todo > W1 Projection Stage
-//
-//	//Convert to NDC > SCREEN space
-//	vertices_out.resize(vertices_in.size());
-//	for (size_t i{}; i < vertices_in.size(); ++i)
-//	{
-//		//Transform them with a VIEW Matrix (inverse ONB)
-//		vertices_out[i].position = m_Camera.viewMatrix.TransformPoint({ vertices_in[i].position, 1.0f });
-//		vertices_out[i].color = vertices_in[i].color;
-//
-//		//Perspective Divide
-//		vertices_out[i].position.x /= vertices_out[i].position.z;
-//		vertices_out[i].position.y /= vertices_out[i].position.z;
-//
-//	}
-//}
+void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const
+{
+	//Todo > W1 Projection Stage
+
+	//Convert to NDC > SCREEN space
+	vertices_out.resize(vertices_in.size());
+	for (size_t i{}; i < vertices_in.size(); ++i)
+	{
+		//Transform them with a VIEW Matrix (inverse ONB)
+		vertices_out[i].position = m_Camera.viewMatrix.TransformPoint({ vertices_in[i].position, 1.0f });
+		vertices_out[i].color = vertices_in[i].color;
+
+		//Perspective Divide
+		vertices_out[i].position.x /= vertices_out[i].position.z;
+		vertices_out[i].position.y /= vertices_out[i].position.z;
+
+	}
+}
 
 void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex_Out>& vertices_out, const Matrix& worldViewProjectionMatrix, const Matrix& meshWorldMatrix) const
 {
@@ -731,7 +702,7 @@ void Renderer::RotateMesh(float elapsedSec)
 void Renderer::HandleKeyInput()
 {
 	const uint8_t* pKeyboardState = SDL_GetKeyboardState(nullptr);
-	if (pKeyboardState[SDL_SCANCODE_F4])
+	if (pKeyboardState[SDL_SCANCODE_Z])
 	{
 		switch (m_displayMode)
 		{
@@ -743,26 +714,8 @@ void Renderer::HandleKeyInput()
 			break;
 		}
 	}
-	if(pKeyboardState[SDL_SCANCODE_F7])
-	{
-		switch(m_ShadingMode)
-		{
-		case ShadingMode::observed:
-			m_ShadingMode = ShadingMode::combined;
-			break;
-		case ShadingMode::combined:
-			m_ShadingMode = ShadingMode::diffuse;
-			break;
-		case ShadingMode::diffuse:
-			m_ShadingMode = ShadingMode::specular;
-			break;
-		case ShadingMode::specular:
-			m_ShadingMode = ShadingMode::observed;
-			break;
-		}
-	}
 
-	if(pKeyboardState[SDL_SCANCODE_F6])
+	if(pKeyboardState[SDL_SCANCODE_N])
 	{
 		if (m_UseNormalMap)
 		{
@@ -771,7 +724,7 @@ void Renderer::HandleKeyInput()
 		else m_UseNormalMap = true;
 	}
 
-	if(pKeyboardState[SDL_SCANCODE_F5])
+	if(pKeyboardState[SDL_SCANCODE_R])
 	{
 		if (m_RotateMesh)
 		{

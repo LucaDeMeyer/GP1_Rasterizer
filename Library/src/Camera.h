@@ -100,11 +100,11 @@ namespace dae
 			CalculateViewMatrix();
 			float ar = aspectRatio;
 			float fv = fov;
-			if (init || ar != aspectRatio || fv != fov)
+
+			if (init ||!AreEqual(ar,aspectRatio)  ||!AreEqual(fv,fov) )
 			{
 				CalculateProjectionMatrix(aspectRatio); //Try to optimize this - should only be called once or when fov/aspectRatio changes
 				init = false;
-				std::cout << "calcprojection\n";
 			}
 		}
 
