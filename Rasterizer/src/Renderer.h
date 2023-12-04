@@ -43,6 +43,12 @@ namespace dae
 		void RenderTriangle() const;
 		void ClearBackground() const;
 		void ResetDepthBuffer() const;
+
+		enum class DisplayMode
+		{
+			depthBuffer,
+			finalColor
+		};
 	private:
 		SDL_Window* m_pWindow{};
 
@@ -61,7 +67,9 @@ namespace dae
 
 		Texture* m_pTexture{};
 
+		bool m_DepthBuffer{false};
 
-
+		void HandleKeyInput();
+		DisplayMode m_displayMode{ DisplayMode::finalColor };
 	};
 }

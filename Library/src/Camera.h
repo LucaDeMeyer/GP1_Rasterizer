@@ -62,7 +62,6 @@ namespace dae
 		void CalculateProjectionMatrix(const float aspectRatio)
 		{
 			//TODO W3
-
 			//ProjectionMatrix => Matrix::CreatePerspectiveFovLH(...) [not implemented yet]
 			projectionMatrix = Matrix::CreatePerspectiveFovLH(fov, aspectRatio, near, far);
 			//DirectX Implementation => https://learn.microsoft.com/en-us/windows/win32/direct3d9/d3dxmatrixperspectivefovlh
@@ -72,7 +71,6 @@ namespace dae
 		{
 			return (vector.x < -1.f || vector.x > 1.f || vector.y < -1.f || vector.y > 1.f || vector.z < -1.f || vector.z > 1.f);
 		}
-
 
 		void Update(Timer* pTimer)
 		{
