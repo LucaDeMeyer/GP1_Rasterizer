@@ -34,14 +34,13 @@ namespace dae
 
 		bool SaveBufferToImage() const;
 
-		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const;
+		//void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const;
 
-		void VertexTransformationToScreenSpace(const std::vector<Vertex>& vertices_in, std::vector<Vector2>& vertex_out) const;
+		void VertexTransformationToScreenSpace(const std::vector<Vertex_Out>& vertices_in, std::vector<Vector2>& vertex_out) const;
+
+		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex_Out>& vertices_out, const Matrix& worldViewProjectionMatrix, const Matrix& meshWorldMatrix) const;
 
 		void RenderTriangle() const;
-
-		void RenderTriangle(const Mesh& mesh, const std::vector<Vector2>& verteciesRaster,
-			int vertexIndex, bool swapVertex) const;
 		void ClearBackground() const;
 		void ResetDepthBuffer() const;
 	private:
@@ -61,5 +60,8 @@ namespace dae
 		int m_FOV{ 90 };
 
 		Texture* m_pTexture{};
+
+
+
 	};
 }
