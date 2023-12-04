@@ -53,6 +53,7 @@ void Renderer::Render() const
 	ResetDepthBuffer();
 
 	//define mesh
+#define TRIANGLESTRIP;
 	const std::vector<Mesh> meshes_world =
 	{
 
@@ -91,7 +92,7 @@ void Renderer::Render() const
 		VertexTransformationFunction(mesh.vertices, vertices_ndc, worldViewProjectionMatrix, mesh.worldMatrix);
 
 		VertexTransformationToScreenSpace(vertices_ndc, vertices_screen);
-
+#ifdef
 		//if triangle list -> go over indices by 3 to get full triangle
 		if(mesh.primitiveTopology == PrimitiveTopology::TriangleList)
 		{
@@ -105,6 +106,11 @@ void Renderer::Render() const
 				const Vector2 v0{ vertices_screen[vertexIndex0] };
 				const Vector2 v1{ vertices_screen[vertexIndex1] };
 				const Vector2 v2{ vertices_screen[vertexIndex2] };
+
+				//frustrum culling
+				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex0].position)) return;
+				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex1].position)) return;
+				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex2].position)) return;
 
 				//calc edges
 
@@ -192,7 +198,7 @@ void Renderer::Render() const
 
 
 		}
-
+#endif
 
 		//if triangle strip -> loop over indices by 1
 		if(mesh.primitiveTopology == PrimitiveTopology::TriangleStrip)
@@ -208,6 +214,12 @@ void Renderer::Render() const
 				uint32_t vertexIndex2 = {mesh.indices[vertexIndex + 2 * !swapVertices + 1 * swapVertices]};
 
 				// same logic as render triangle
+
+
+				//freezes? why?
+				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex0].position)) return;
+				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex1].position)) return;
+				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex2].position)) return;
 
 				//get vertices
 				const Vector2 v0{ vertices_screen[vertexIndex0] };
