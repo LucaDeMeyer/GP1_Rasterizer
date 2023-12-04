@@ -61,6 +61,11 @@ namespace dae
 			specular,
 			combined
 		};
+		enum class State
+		{
+			rotate,
+			idle
+		};
 	private:
 		SDL_Window* m_pWindow{};
 
@@ -92,5 +97,6 @@ namespace dae
 		void HandleKeyInput();
 		DisplayMode m_displayMode{ DisplayMode::finalColor };
 		ShadingMode m_ShadingMode{ ShadingMode::combined };
+		State m_State{ State::idle };
 	};
 }

@@ -4,9 +4,7 @@
 
 //Project includes
 #include "Renderer.h"
-#include "Renderer.h"
 
-#include <iostream>
 
 #include "Maths.h"
 #include "Texture.h"
@@ -34,24 +32,25 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	std::vector<Uint32> indices;
 	//TukTuk
 	//Utils::ParseOBJ("Resources/tuktuk.obj", vertices, indices);
-	
+
+	//load obj
 	Utils::ParseOBJ("Resources/vehicle.obj", vertices, indices);
 	m_MeshesWorld.emplace_back(vertices, indices, PrimitiveTopology::TriangleList);
 
-
+	//load textures
 	//m_pTexture = Texture::LoadFromFile("Resources/tuktuk.png");
 	m_pTexture = Texture::LoadFromFile("resources/vehicle_diffuse.png");
 	m_pNormalMap = Texture::LoadFromFile("resources/vehicle_normal.png");
 	m_pSpecularMap = Texture::LoadFromFile("resources/vehicle_specular.png");
 	m_pGlossinessMap = Texture::LoadFromFile("resources/vehicle_gloss.png");
+
+
 	//Initialize Camera
-	//m_Camera.Initialize(60.f, { .0f,.0f,-10.f });
-	
 	m_Ar = static_cast<float>(m_Width) / static_cast<float>(m_Height);
-	m_Camera.Initialize( m_Ar,45.f, { 0.f, 5.f, -64.f });
+	m_Camera.Initialize( m_Ar,45.f, { 0.f, 5.f, -50.f });
 
 	const Vector3 position{ 0, 0, 50 };
-	//const Vector3 position{ 12.4f, -0.7f, 7.5f };
+
 	constexpr float YRotation{ -PI_DIV_2 };
 
 	m_MeshesWorld[0].worldMatrix = Matrix::CreateRotationY(YRotation) * Matrix::CreateTranslation(position);
@@ -69,17 +68,18 @@ void Renderer::Update(Timer* pTimer)
 {
 	m_Camera.Update(pTimer);
 	HandleKeyInput();
-	if (m_RotateMesh)
+	if (m_State == State::rotate)
 	{
 		RotateMesh(pTimer->GetElapsed());
 	}
 	Matrix rotationMatrix{ Matrix::CreateRotationY(m_MeshRotationAngle) };
 	m_MeshesWorld[0].worldMatrix = rotationMatrix * m_MeshOriginalWorldMatrix;
 }
-//Luca
+
+
 void Renderer::Render() const
 {
-
+	//clear BackGround and reset DepthBuffer
 	ClearBackground();
 	ResetDepthBuffer();
 
@@ -87,6 +87,7 @@ void Renderer::Render() const
 	for (const auto& mesh : m_MeshesWorld)
 	{
 		const auto worldViewProjectionMatrix = mesh.worldMatrix * m_Camera.viewMatrix * m_Camera.projectionMatrix;
+
 		std::vector<Vertex_Out> vertices_ndc{};
 		std::vector<Vector2>vertices_screen{};
 
@@ -99,6 +100,7 @@ void Renderer::Render() const
 		{
 			for (size_t vertexIndex{}; vertexIndex < mesh.indices.size(); vertexIndex += 3)
 			{
+				//get vertex index
 				uint32_t vertexIndex0 = { mesh.indices[vertexIndex] };
 				uint32_t vertexIndex1 = { mesh.indices[vertexIndex + 1] };
 				uint32_t vertexIndex2 = { mesh.indices[vertexIndex + 2] };
@@ -108,13 +110,13 @@ void Renderer::Render() const
 				const Vector2 v1{ vertices_screen[vertexIndex1] };
 				const Vector2 v2{ vertices_screen[vertexIndex2] };
 
+				//frustrum culling
 				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex0].position)) continue;
 				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex1].position)) continue;
 				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex2].position)) continue;
 
 
 				//calc edges
-
 				const Vector2 edge01 = v1 - v0;
 				const Vector2 edge12 = v2 - v1;
 				const Vector2 edge20 = v0 - v2;
@@ -123,7 +125,7 @@ void Renderer::Render() const
 				const float fullTriangleArea{ Vector2::Cross(v1 - v0, v2 - v0) };
 
 				const int boundingBoxpadding{ 1 };
-				// Calculate bounding box of the triangle -> add/subtract 1 -> gets rid of lines between triangles
+				// Calculate bounding box  -> add/subtract 1 -> gets rid of lines between triangles
 				int minX = static_cast<int>(std::min({ v0.x, v1.x, v2.x })) - boundingBoxpadding;
 				int minY = static_cast<int>(std::min({ v0.y, v1.y, v2.y })) - boundingBoxpadding;
 				int maxX = static_cast<int>(std::max({ v0.x, v1.x, v2.x })) + boundingBoxpadding;
@@ -135,6 +137,7 @@ void Renderer::Render() const
 				maxX = std::min(maxX, m_Width - 1);
 				maxY = std::min(maxY, m_Height - 1);
 
+				//for each pixel
 				for (int px{ minX }; px < maxX; ++px)
 				{
 					for (int py{ minY }; py < maxY; ++py)
@@ -144,12 +147,12 @@ void Renderer::Render() const
 						const int pixelIdx{ px + py * m_Width };
 						const Vector2 pixel{ static_cast<float>(px),static_cast<float>(py) };
 
-						// Calculate the vector between vertex and the point
+						// Calc the vector between vertex and pixel
 						const Vector2 directionV0{ pixel - v0 };
 						const Vector2 directionV1{ pixel - v1 };
 						const Vector2 directionV2{ pixel - v2 };
 
-						// Calculate the barycentric weights
+						// Calc the barycentric weights
 						float weightV0{ Vector2::Cross(edge12 , directionV1) };
 						float weightV1{ Vector2::Cross(edge20,directionV2) };
 						float weightV2{ Vector2::Cross(edge01,directionV0) };
@@ -182,7 +185,7 @@ void Renderer::Render() const
 								weightV2 * 1.0f / depthV2)
 						};
 
-						// If this pixel hit is further away then a previous pixel hit, continue to the next pixel
+						
 						if (m_pDepthBufferPixels[pixelIdx] < interpolatedDepth) continue;
 
 						// Save the new depth
@@ -253,14 +256,9 @@ void Renderer::Render() const
 
 						case DisplayMode::depthBuffer:
 						{
-							constexpr float minValue = 0.8f;
-							constexpr float maxValue = 1.f;
+							const float depthBufferColor = Remap(m_pDepthBufferPixels[px + (py * m_Width)], 0.995f, 1.0f);
 
-							// Remap the value to the range [0, 1]
-							float remappedValue = (interpolatedDepth - minValue) / (maxValue - minValue);
-							remappedValue = std::clamp(remappedValue, 0.f, 1.f);
-
-							finalColor = ColorRGB{ remappedValue, remappedValue, remappedValue };
+							finalColor = { depthBufferColor, depthBufferColor, depthBufferColor };
 							break;
 						}
 						}
@@ -274,10 +272,7 @@ void Renderer::Render() const
 					}
 				}
 			}
-
 		}
-
-		
 		//@END
 		//Update SDL Surface
 		SDL_UnlockSurface(m_pBackBuffer);
@@ -509,7 +504,6 @@ ColorRGB Renderer::PixelShading( Vertex_Out& v) const
 	constexpr float lightIntensity{ 2.f };
 	constexpr float specularShininess{ 25.f };
 
-
 	if (m_UseNormalMap)
 	{
 		const Vector3 biNormal = Vector3::Cross(v.normal, v.tangent);
@@ -570,6 +564,8 @@ ColorRGB Renderer::PixelShading( Vertex_Out& v) const
 	}
 	}
 
+	const ColorRGB ambient{ .05f,.05f,.05f };
+	finalColor += ambient;
 	finalColor.MaxToOne();
 
 	return finalColor;
@@ -707,30 +703,77 @@ void Renderer::HandleKeyInput()
 		switch (m_displayMode)
 		{
 		case DisplayMode::finalColor:
+		{
 			m_displayMode = DisplayMode::depthBuffer;
 			break;
+		}
 		case DisplayMode::depthBuffer:
+		{
 			m_displayMode = DisplayMode::finalColor;
 			break;
 		}
+		}
 	}
-
 	if(pKeyboardState[SDL_SCANCODE_N])
 	{
-		if (m_UseNormalMap)
+		switch(m_UseNormalMap)
+		{
+		case true:
 		{
 			m_UseNormalMap = false;
+			break;
 		}
-		else m_UseNormalMap = true;
+		case false:
+		{
+			m_UseNormalMap = true;
+			break;
+		}
+
+		}
 	}
 
 	if(pKeyboardState[SDL_SCANCODE_R])
 	{
-		if (m_RotateMesh)
+		switch(m_State)
 		{
-			m_RotateMesh = false;
+		case State::idle:
+		{
+			m_State = State::rotate;
+			break;
 		}
-		else m_RotateMesh = true;
+		case State::rotate:
+		{
+			m_State = State::idle;
+			break;
+		}
+		}
+	}
+
+	if(pKeyboardState[SDL_SCANCODE_F7])
+	{
+		switch(m_ShadingMode)
+		{
+		case ShadingMode::combined:
+		{
+			m_ShadingMode = ShadingMode::diffuse;
+			break;
+		}
+		case ShadingMode::diffuse:
+		{
+			m_ShadingMode = ShadingMode::observed;
+			break;
+		}
+		case ShadingMode::observed:
+		{
+			m_ShadingMode = ShadingMode::specular;
+			break;
+		}
+		case ShadingMode::specular:
+		{
+			m_ShadingMode = ShadingMode::combined;
+			break;
+		}
+		}
 	}
 }
 
