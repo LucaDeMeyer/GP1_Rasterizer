@@ -5,6 +5,9 @@
 //Project includes
 #include "Renderer.h"
 #include "Renderer.h"
+
+#include <iostream>
+
 #include "Maths.h"
 #include "Texture.h"
 #include "Utils.h"
@@ -26,14 +29,36 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	
 	m_pDepthBufferPixels = new float[static_cast<float>(m_Width * m_Height)];
 
-	m_pTexture = Texture::LoadFromFile("Resources/tuktuk.png");
 
+	std::vector<Vertex> vertices;
+	std::vector<Uint32> indices;
+	//TukTuk
+	//Utils::ParseOBJ("Resources/tuktuk.obj", vertices, indices);
+	
+	Utils::ParseOBJ("Resources/vehicle.obj", vertices, indices);
+	m_MeshesWorld.emplace_back(vertices, indices, PrimitiveTopology::TriangleList);
+
+
+	//m_pTexture = Texture::LoadFromFile("Resources/tuktuk.png");
+	m_pTexture = Texture::LoadFromFile("resources/vehicle_diffuse.png");
+	m_pNormalMap = Texture::LoadFromFile("resources/vehicle_normal.png");
+	m_pSpecularMap = Texture::LoadFromFile("resources/vehicle_specular.png");
+	m_pGlossinessMap = Texture::LoadFromFile("resources/vehicle_gloss.png");
 	//Initialize Camera
-	m_Camera.Initialize(60.f, { .0f,.0f,-10.f });
+	//m_Camera.Initialize(60.f, { .0f,.0f,-10.f });
 	
 	m_Ar = static_cast<float>(m_Width) / static_cast<float>(m_Height);
-	m_Camera.CalculateProjectionMatrix(m_Ar);
-	
+	m_Camera.Initialize( m_Ar,45.f, { 0.f, 5.f, -64.f });
+
+
+	//m_Camera.CalculateProjectionMatrix(m_Ar);
+	const Vector3 position{ 0, 0, 50 };
+	//const Vector3 position{ 12.4f, -0.7f, 7.5f };
+	constexpr float YRotation{ -PI_DIV_2 };
+
+	m_MeshesWorld[0].worldMatrix = Matrix::CreateRotationY(YRotation) * Matrix::CreateTranslation(position);
+	m_MeshOriginalWorldMatrix = m_MeshesWorld[0].worldMatrix;
+
 }
 
 Renderer::~Renderer()
@@ -46,6 +71,12 @@ void Renderer::Update(Timer* pTimer)
 {
 	m_Camera.Update(pTimer);
 	HandleKeyInput();
+	if (m_RotateMesh)
+	{
+		RotateMesh(pTimer->GetElapsed());
+	}
+	Matrix rotationMatrix{ Matrix::CreateRotationY(m_MeshRotationAngle) };
+	m_MeshesWorld[0].worldMatrix = rotationMatrix * m_MeshOriginalWorldMatrix;
 }
 //Luca
 void Renderer::Render() const
@@ -55,10 +86,6 @@ void Renderer::Render() const
 	ResetDepthBuffer();
 
 	//define mesh
-
-
-#define TRIANGLESTRIP
-
 	/*std::vector<Mesh> meshes_world =
 	{
 
@@ -85,19 +112,9 @@ void Renderer::Render() const
 		}
 	};*/
 
-
-
-	std::vector<Mesh> meshes_world{};
-
-	std::vector<Vertex> vertices;
-	std::vector<Uint32> indices;
-	Utils::ParseOBJ("Resources/tuktuk.obj", vertices, indices);
-	meshes_world.emplace_back(vertices, indices, PrimitiveTopology::TriangleList);
 	// for each mesh
-
-	for (const auto& mesh : meshes_world)
+	for (const auto& mesh : m_MeshesWorld)
 	{
-
 		const auto worldViewProjectionMatrix = mesh.worldMatrix * m_Camera.viewMatrix * m_Camera.projectionMatrix;
 		std::vector<Vertex_Out> vertices_ndc{};
 		std::vector<Vector2>vertices_screen{};
@@ -200,6 +217,7 @@ void Renderer::Render() const
 						// Save the new depth
 						m_pDepthBufferPixels[pixelIdx] = interpolatedDepth;
 
+						
 						//calculate WDepth
 						const float wDepthV0{ (vertices_ndc[vertexIndex0].position.w) };
 						const float wDepthV1{ (vertices_ndc[vertexIndex1].position.w) };
@@ -226,13 +244,42 @@ void Renderer::Render() const
 								(vertices_ndc[vertexIndex2].uv / wDepthV2) * weightV2) * interpolatedWDepth
 
 							};
-							//clamp uv x and y to [0,1]
-							interpolatedUv.x = std::clamp(interpolatedUv.x, 0.0f, 1.f);
-							interpolatedUv.y = std::clamp(interpolatedUv.y, 0.f, 1.f);
+							Vector3 interpolatedNormal
+							{
+									((vertices_ndc[vertexIndex0].normal / wDepthV0) * weightV0 +
+								(vertices_ndc[vertexIndex1].normal / wDepthV1) * weightV1 +
+								(vertices_ndc[vertexIndex2].normal / wDepthV2) * weightV2)* interpolatedWDepth
+							};
 
-							finalColor = m_pTexture->Sample(interpolatedUv);
+							interpolatedNormal.Normalize();
+
+							Vector3 interpolatedTangent
+							{
+								((vertices_ndc[vertexIndex0].tangent / wDepthV0) * weightV0 +
+								(vertices_ndc[vertexIndex1].tangent / wDepthV1) * weightV1 +
+								(vertices_ndc[vertexIndex2].tangent / wDepthV2) * weightV2) * interpolatedWDepth
+
+							};
+							interpolatedTangent.Normalize();
+
+							Vector3 interpolatedViewDirection
+							{
+								((vertices_ndc[vertexIndex0].viewDirection / wDepthV0) * weightV0 +
+								(vertices_ndc[vertexIndex1].viewDirection / wDepthV1) * weightV1 +
+								(vertices_ndc[vertexIndex2].viewDirection / wDepthV2) * weightV2)* interpolatedWDepth
+							};
+							Vertex_Out pixelVertex{};
+							pixelVertex.position = Vector4{ pixel.x,pixel.y,interpolatedDepth,interpolatedWDepth };
+							pixelVertex.color = ColorRGB{ 0,0,0 };
+							pixelVertex.uv = interpolatedUv;
+							pixelVertex.normal = interpolatedNormal;
+							pixelVertex.tangent = interpolatedTangent;
+							pixelVertex.viewDirection = interpolatedViewDirection;
+
+							finalColor = PixelShading(pixelVertex);
 							break;
 						}
+
 						case DisplayMode::depthBuffer:
 						{
 							constexpr float minValue = 0.8f;
@@ -257,9 +304,21 @@ void Renderer::Render() const
 				}
 			}
 
-
 		}
 
+		
+		//@END
+		//Update SDL Surface
+		SDL_UnlockSurface(m_pBackBuffer);
+		SDL_BlitSurface(m_pBackBuffer, nullptr, m_pFrontBuffer, nullptr);
+		SDL_UpdateWindowSurface(m_pWindow);
+	}
+}
+
+void Renderer::RenderTriangleStrip(std::vector<Mesh>& meshes_world, std::vector<Vertex_Out>& vertices_ndc,std::vector<Vector2>&vertices_screen) const
+{
+	for (const auto& mesh : meshes_world)
+	{
 		//if triangle strip -> loop over indices by 1
 		if (mesh.primitiveTopology == PrimitiveTopology::TriangleStrip)
 		{
@@ -268,15 +327,11 @@ void Renderer::Render() const
 				// bool top swap vertices -> uneven index -> flip triangle
 				bool swapVertices = vertexIndex % 2;
 
-
 				uint32_t vertexIndex0 = { mesh.indices[vertexIndex] };
 				uint32_t vertexIndex1 = { mesh.indices[vertexIndex + 1 * !swapVertices + 2 * swapVertices] };
 				uint32_t vertexIndex2 = { mesh.indices[vertexIndex + 2 * !swapVertices + 1 * swapVertices] };
 
-				// same logic as render triangle
-
-
-				//freezes? why?
+				//frustrum clipping
 				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex0].position)) continue;
 				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex1].position)) continue;
 				if (Camera::IsOutsideFrustum(vertices_ndc[vertexIndex2].position)) continue;
@@ -417,17 +472,7 @@ void Renderer::Render() const
 					}
 				}
 			}
-
-
-
 		}
-
-
-		//@END
-		//Update SDL Surface
-		SDL_UnlockSurface(m_pBackBuffer);
-		SDL_BlitSurface(m_pBackBuffer, nullptr, m_pFrontBuffer, nullptr);
-		SDL_UpdateWindowSurface(m_pWindow);
 	}
 }
 
@@ -485,7 +530,86 @@ void Renderer::VertexTransformationToScreenSpace(const std::vector<Vertex_Out>& 
 	}
 }
 
+ColorRGB Renderer::PixelShading( Vertex_Out& v) const
+{
+	Vector3 lightDirection{ .557f,-.557f,.557f };
 
+	lightDirection.Normalize();
+	constexpr float lightIntensity{ 2.f };
+	constexpr float specularShininess{ 25.f };
+
+
+	if (m_UseNormalMap)
+	{
+		const Vector3 biNormal = Vector3::Cross(v.normal, v.tangent);
+		const Matrix tangentSpaceAxis = { v.tangent, biNormal, v.normal, Vector3::Zero };
+
+		const ColorRGB normalColor = m_pNormalMap->Sample(v.uv);
+		Vector3 sampledNormal = { normalColor.r, normalColor.g, normalColor.b };
+		sampledNormal = 2.f * sampledNormal - Vector3{ 1.f, 1.f, 1.f };
+
+		sampledNormal = tangentSpaceAxis.TransformVector(sampledNormal);
+
+		v.normal = sampledNormal.Normalized();
+	}
+
+
+	// OBSERVED AREA
+	float ObservedArea{ Vector3::Dot(v.normal,  -lightDirection) };
+	ObservedArea = std::max(ObservedArea, 0.f);
+
+	const ColorRGB observedAreaRGB{ ObservedArea ,ObservedArea ,ObservedArea };
+
+	// DIFFUSE
+	const ColorRGB TextureColor{ m_pTexture->Sample(v.uv) };
+
+	// SPECULAR
+	const Vector3 reflect{ Vector3::Reflect(-lightDirection, v.normal) };
+	float cosAlpha{ Vector3::Dot(reflect, v.viewDirection) };
+	cosAlpha = std::max(0.f, cosAlpha);
+
+
+	const float specularExp{ specularShininess * m_pGlossinessMap->Sample(v.uv).r };
+
+	const ColorRGB specular{ m_pSpecularMap->Sample(v.uv) * powf(cosAlpha, specularExp) };
+
+	ColorRGB finalColor{ 0,0,0 };
+
+	switch (m_ShadingMode)
+	{
+	case ShadingMode::observed:
+	{
+		finalColor += observedAreaRGB;
+		break;
+	}
+	case ShadingMode::diffuse:
+	{
+		finalColor += lightIntensity * observedAreaRGB * TextureColor / PI;
+		break;
+	}
+	case ShadingMode::specular:
+	{
+		finalColor += specular; // *observedAreaRGB;
+		break;
+	}
+	case ShadingMode::combined:
+	{
+		finalColor += (lightIntensity * TextureColor / PI + specular) * observedAreaRGB;
+		break;
+	}
+	}
+
+	finalColor.MaxToOne();
+
+	return finalColor;
+}
+
+void Renderer::RotateMesh(float elapsedSec)
+{
+
+	constexpr float rotationSpeed{ 1.f };
+	m_MeshRotationAngle += rotationSpeed * elapsedSec;
+}
 
 //void Renderer::RenderTriangle() const
 //{
@@ -618,6 +742,42 @@ void Renderer::HandleKeyInput()
 			m_displayMode = DisplayMode::finalColor;
 			break;
 		}
+	}
+	if(pKeyboardState[SDL_SCANCODE_F7])
+	{
+		switch(m_ShadingMode)
+		{
+		case ShadingMode::observed:
+			m_ShadingMode = ShadingMode::combined;
+			break;
+		case ShadingMode::combined:
+			m_ShadingMode = ShadingMode::diffuse;
+			break;
+		case ShadingMode::diffuse:
+			m_ShadingMode = ShadingMode::specular;
+			break;
+		case ShadingMode::specular:
+			m_ShadingMode = ShadingMode::observed;
+			break;
+		}
+	}
+
+	if(pKeyboardState[SDL_SCANCODE_F6])
+	{
+		if (m_UseNormalMap)
+		{
+			m_UseNormalMap = false;
+		}
+		else m_UseNormalMap = true;
+	}
+
+	if(pKeyboardState[SDL_SCANCODE_F5])
+	{
+		if (m_RotateMesh)
+		{
+			m_RotateMesh = false;
+		}
+		else m_RotateMesh = true;
 	}
 }
 

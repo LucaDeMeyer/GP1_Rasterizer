@@ -1,5 +1,6 @@
 #pragma once
 #include <cassert>
+#include <iostream>
 #include <SDL_keyboard.h>
 #include <SDL_mouse.h>
 
@@ -21,6 +22,7 @@ namespace dae
 
 		Vector3 origin{};
 		float fovAngle{90.f};
+		float aspectRatio{};
 		float fov{ tanf((fovAngle * TO_RADIANS) / 2.f) };
 
 		Vector3 forward{Vector3::UnitZ};
@@ -35,15 +37,18 @@ namespace dae
 
 		Matrix projectionMatrix{};
 
-		float near{ 1.f };
-		float far{ 1000.f };
+		float near{ .1f };
+		float far{ 100.f };
 
-		void Initialize(float _fovAngle = 90.f, Vector3 _origin = {0.f,0.f,0.f})
+
+		bool init{ false };
+		void Initialize(float aR,float _fovAngle = 90.f, Vector3 _origin = {0.f,0.f,0.f})
 		{
 			fovAngle = _fovAngle;
 			fov = tanf((fovAngle * TO_RADIANS) / 2.f);
-
+			aspectRatio = aR;
 			origin = _origin;
+			init = true;
 		}
 
 		void CalculateViewMatrix()
@@ -93,11 +98,15 @@ namespace dae
 
 			//Update Matrices
 			CalculateViewMatrix();
-			//CalculateProjectionMatrix(); //Try to optimize this - should only be called once or when fov/aspectRatio changes
+			float ar = aspectRatio;
+			float fv = fov;
+			if (init || ar != aspectRatio || fv != fov)
+			{
+				CalculateProjectionMatrix(aspectRatio); //Try to optimize this - should only be called once or when fov/aspectRatio changes
+				init = false;
+				std::cout << "calcprojection\n";
+			}
 		}
-
-
-
 
 		void HandleKeyboardInput(float deltaTime, float moveSpeed)
 		{
